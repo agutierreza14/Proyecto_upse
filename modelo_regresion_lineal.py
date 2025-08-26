@@ -94,3 +94,45 @@ clf = LogisticRegression(
     class_weight="balanced", max_iter=1000
 )
 clf.fit(X_train_s, y_train)
+
+# Evaluación =========
+
+y_pred = clf.predict(X_test_s)
+if hasattr(clf, "predict_proba"):
+    y_prob = clf.predict_proba(X_test_s)[:, 1]
+else:
+    # En caso de no tener predict_proba, usar decision_function
+    from sklearn.utils.extmath import softmax
+    scores = clf.decision_function(X_test_s)
+    # Aproximación 
+    y_prob = (scores - scores.min()) / (scores.max() - scores.min() + 1e-9)
+
+acc = accuracy_score(y_test, y_pred)
+prec, rec, f1, _ = precision_recall_fscore_support(y_test, y_pred, average="binary", zero_division=0)
+auc = roc_auc_score(y_test, y_prob)
+
+print("\n== Métricas en TEST ==")
+print(f"Accuracy : {acc:.4f}")
+print(f"Precision: {prec:.4f}")
+print(f"Recall   : {rec:.4f}")
+print(f"F1-score : {f1:.4f}")
+print(f"ROC-AUC  : {auc:.4f}")
+
+print("\n== Reporte de clasificación ==")
+print(classification_report(y_test, y_pred, zero_division=0))
+
+print("== Matriz de confusión ==")
+print(confusion_matrix(y_test, y_pred))
+
+# ===== Importancia (coeficientes) =========
+coefs = pd.Series(clf.coef_.ravel(), index=X_cols).sort_values(ascending=False)
+print("\n== Top +coef (empujan a clase 1: internacional) ==")
+print(coefs.head(10))
+print("\n== Top -coef (empujan a clase 0: nacional) ==")
+print(coefs.tail(10))
+
+#  Curva ROC
+fpr, tpr, thr = roc_curve(y_test, y_prob)
+roc_points = pd.DataFrame({"fpr": fpr, "tpr": tpr, "threshold": thr})
+print("\n== Primeros puntos de la curva ROC ==")
+print(roc_points.head())
