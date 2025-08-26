@@ -1,62 +1,96 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split, GridSearchCV
+import numpy as np
+from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.metrics import (
+    accuracy_score, precision_recall_fscore_support,
+    classification_report, confusion_matrix, roc_auc_score, roc_curve
+)
 
-# === 1. Cargar dataset con features (punto C) ===
-PATH_DATA = "caracteristica_telco.csv"   # <-- ajusta a tu ruta real
+# ========= Cargar datos =========
+PATH_DATA = "caracteristica_telco.csv"   
 df = pd.read_csv(PATH_DATA)
 
-# Objetivo binario
-y = df["y_international"]
+# ======= Analisis vector de caracteristicas =========
+print("\n== Dimensiones y columnas ==")
+print(df.shape)
+print(df.columns.tolist())
 
-# Quitamos columnas que no sirven como predictores
-cols_to_drop = ["y_country", "y_international", "countrycode", "datetime"]
-X = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
+print("\n== Balance de la etiqueta (y_international) ==")
+print(df["y_international"].value_counts())
 
-# === 2. División de datos ===
+print("\n== Tipos de datos ==")
+print(df.dtypes)
+
+# == Preparar X, y (solo numéricas)
+
+target = "y_international"
+cols_a_excluir = {"y_international", "y_country", "countrycode", "datetime"}  # datetime es string
+
+# Tomamos solo columnas numéricas
+num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+
+# Quitamos targets y columnas a excluir
+X_cols = [c for c in num_cols if c not in cols_a_excluir]
+X = df[X_cols].copy()
+y = df[target].astype(int).values
+
+print("\n== Nº de característica usadas ==")
+print(len(X_cols))
+print("Features:", X_cols)
+
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, stratify=y, random_state=42
+    X.values, y, test_size=0.2, stratify=y, random_state=42
 )
 
-# === 3. Pipeline: Escalado + Regresión Logística ===
-pipeline = Pipeline([
-    ("scaler", StandardScaler()),
-    ("clf", LogisticRegression(max_iter=1000, class_weight="balanced"))
-])
+# ===== ajustar train
+scaler = StandardScaler()
+scaler.fit(X_train)                # ajusta en entrenamiento
+X_train_s = scaler.transform(X_train)
+X_test_s  = scaler.transform(X_test)
 
-# === 4. Grid de hiperparámetros ===
-param_grid = {
-    "clf__C": [0.01, 0.1, 1, 10],
-    "clf__penalty": ["l2"],
-    "clf__solver": ["lbfgs", "saga"],
-}
+# ========= 6) CV MANUAL p
+Cs = [0.01, 0.1, 1, 10]
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
-grid = GridSearchCV(
-    pipeline,
-    param_grid,
-    cv=5,
-    scoring="f1",
-    n_jobs=-1
+def cv_score_for_C(C_value):
+    f1s = []
+    for tr_idx, va_idx in cv.split(X_train, y_train):
+        X_tr, X_va = X_train[tr_idx], X_train[va_idx]
+        y_tr, y_va = y_train[tr_idx], y_train[va_idx]
+
+        # 
+        sc = StandardScaler()
+        sc.fit(X_tr)
+        X_tr_s = sc.transform(X_tr)
+        X_va_s = sc.transform(X_va)
+
+        clf = LogisticRegression(
+            C=C_value, penalty="l2", solver="lbfgs",
+            class_weight="balanced", max_iter=1000
+        )
+        clf.fit(X_tr_s, y_tr)
+        y_va_pred = clf.predict(X_va_s)
+
+        _, _, f1, _ = precision_recall_fscore_support(
+            y_va, y_va_pred, average="binary", zero_division=0
+        )
+        f1s.append(f1)
+    return np.mean(f1s), np.std(f1s)
+
+cv_results = []
+for C in Cs:
+    m, s = cv_score_for_C(C)
+    cv_results.append((C, m, s))
+    print(f"C={C}: F1 mean={m:.4f} ± {s:.4f}")
+
+best_C, best_mean, best_std = max(cv_results, key=lambda t: t[1])
+print(f"\n== Mejor C (según F1-CV) => C={best_C} (F1={best_mean:.4f}) ==")
+
+# === Entrenamiento FINAL  (ajustado con todo el train) =========
+clf = LogisticRegression(
+    C=best_C, penalty="l2", solver="lbfgs",
+    class_weight="balanced", max_iter=1000
 )
-
-# === 5. Entrenamiento ===
-grid.fit(X_train, y_train)
-
-# === 6. Evaluación ===
-y_pred = grid.predict(X_test)
-y_prob = grid.predict_proba(X_test)[:,1]
-
-print("== Mejor modelo encontrado ==")
-print(grid.best_params_)
-
-print("\n== Reporte de clasificación ==")
-print(classification_report(y_test, y_pred))
-
-print("\n== Matriz de confusión ==")
-print(confusion_matrix(y_test, y_pred))
-
-print("\n== ROC-AUC ==")
-print(roc_auc_score(y_test, y_prob))
+clf.fit(X_train_s, y_train)

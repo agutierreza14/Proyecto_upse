@@ -128,8 +128,8 @@ def guardar(df: pd.DataFrame, path_out: str) -> None:
     df.to_csv(path_out, index=False)
 
 if __name__ == "__main__":
-    # === Configura tus rutas ===
-    # Usa el archivo que generaste en el Punto B (transformación).
+    # === Configuracion de rutas ===
+    
     PATH_IN = "transformacion_telco.csv"          
     PATH_OUT = "caracteristica_telco.csv"         
 
