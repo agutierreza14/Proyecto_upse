@@ -23,7 +23,7 @@ BASE_FEATS = [
     "log1p_total_sms","log1p_total_call","log1p_internet","log1p_total_traffic"
 ]
 
-WINDOW = 6   # longitud de ventana T
+WINDOW = 4   # longitud de ventana T
 STEP   = 1   # stride entre ventanas
 
 def build_sequences(df: pd.DataFrame,
